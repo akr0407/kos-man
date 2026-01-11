@@ -211,7 +211,7 @@ const goBack = () => {
                             <form @submit.prevent="addReading" class="space-y-5">
                                 <div class="space-y-1">
                                     <label class="text-sm font-medium">Billing Period</label>
-                                    <UInput v-model="newPeriod" type="month" icon="i-heroicons-calendar" class="w-full" />
+                                    <DatePicker v-model="newPeriod" granularity="month" class="w-full" />
                                 </div>
 
                                 <div class="grid grid-cols-2 gap-4">
@@ -387,7 +387,7 @@ const goBack = () => {
                         <!-- Move-In Date -->
                         <div class="space-y-1">
                             <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Move-In Date</label>
-                            <UInput v-model="moveInDate" type="date" icon="i-heroicons-calendar" class="w-full" />
+                            <DatePicker v-model="moveInDate" class="w-full" />
                             <p class="text-xs text-gray-500">Used for prorated billing calculation.</p>
                         </div>
                     </div>

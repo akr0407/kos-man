@@ -212,7 +212,7 @@ const formatCurrency = (val: number) => new Intl.NumberFormat('id-ID', { style: 
           </div>
           <div class="space-y-1">
             <label class="text-sm font-medium">Period</label>
-            <UInput v-model="genPeriod" type="month" icon="i-heroicons-calendar" class="w-full" />
+            <DatePicker v-model="genPeriod" granularity="month" class="w-full" />
           </div>
 
           <div v-if="genRoom" class="bg-gray-50 dark:bg-gray-800/50 p-4 rounded-lg space-y-2 text-sm">
