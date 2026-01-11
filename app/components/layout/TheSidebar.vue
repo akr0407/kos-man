@@ -44,6 +44,11 @@ const defaultNavigation: NavItem[] = [
     to: '/tenants'
   },
   {
+    label: 'Billing',
+    icon: 'i-heroicons-banknotes',
+    to: '/billing'
+  },
+  {
     label: 'Settings',
     icon: 'i-heroicons-cog-6-tooth',
     to: '/settings'

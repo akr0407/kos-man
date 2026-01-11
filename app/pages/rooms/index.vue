@@ -1,12 +1,18 @@
 <script setup lang="ts">
-import { useKosStore } from '~/stores/kos'
+import { useKosStore, type Room } from '~/stores/kos'
 
 const store = useKosStore()
 const { rooms, properties } = storeToRefs(store)
+const toast = useToast()
 
 // Filter state
 const route = useRoute()
 const selectedPropertyId = ref<string>((route.query.propertyId as string) || '__all__')
+
+// Room Modal State
+const isRoomModalOpen = ref(false)
+const selectedRoom = ref<Room | undefined>(undefined)
+const modalPropertyId = ref<string>('')
 
 // Property options for filter
 const propertyOptions = computed(() => [
@@ -39,6 +45,29 @@ const getStatusColor = (status: string) => {
 const formatCurrency = (val: number) => {
     return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(val)
 }
+
+// Room CRUD
+const openAddRoomModal = () => {
+    selectedRoom.value = undefined
+    // Use currently filtered property or first property
+    modalPropertyId.value = selectedPropertyId.value !== '__all__' 
+        ? selectedPropertyId.value 
+        : properties.value[0]?.id || ''
+    isRoomModalOpen.value = true
+}
+
+const openEditRoomModal = (room: Room) => {
+    selectedRoom.value = room
+    modalPropertyId.value = room.propertyId
+    isRoomModalOpen.value = true
+}
+
+const deleteRoom = (room: Room) => {
+    if (confirm(`Delete "${room.name}"? This will also delete its billing history.`)) {
+        store.deleteRoom(room.id)
+        toast.add({ title: 'Room Deleted', color: 'error' })
+    }
+}
 </script>
 
 <template>
@@ -53,22 +82,35 @@ const formatCurrency = (val: number) => {
         <p class="text-gray-500 dark:text-gray-400 mt-1">Manage occupancy and room details.</p>
       </div>
       
-      <div class="flex items-center gap-2 bg-white dark:bg-gray-900 p-2 rounded-lg border border-gray-200 dark:border-gray-800 shadow-sm">
-        <UIcon name="i-heroicons-funnel" class="text-gray-400 ml-2" />
-        <USelect 
-          v-model="selectedPropertyId" 
-          :items="propertyOptions" 
-          value-key="value" 
-          label-key="label"
-          class="w-56"
-          variant="none"
-          placeholder="All Properties"
-        />
+      <div class="flex items-center gap-3">
+        <div class="flex items-center gap-2 bg-white dark:bg-gray-900 p-2 rounded-lg border border-gray-200 dark:border-gray-800 shadow-sm">
+          <UIcon name="i-heroicons-funnel" class="text-gray-400 ml-2" />
+          <USelect 
+            v-model="selectedPropertyId" 
+            :items="propertyOptions" 
+            value-key="value" 
+            label-key="label"
+            class="w-56"
+            variant="none"
+            placeholder="All Properties"
+          />
+        </div>
+        <UButton icon="i-heroicons-plus" size="lg" @click="openAddRoomModal" :disabled="properties.length === 0">
+          Add Room
+        </UButton>
       </div>
     </div>
 
+    <!-- No Properties Warning -->
+    <div v-if="properties.length === 0" class="text-center py-12 bg-orange-50 dark:bg-orange-950/30 rounded-xl border border-orange-200 dark:border-orange-800">
+      <UIcon name="i-heroicons-exclamation-triangle" class="w-12 h-12 text-orange-500 mb-3" />
+      <h3 class="text-lg font-medium text-gray-900 dark:text-white">No Properties Found</h3>
+      <p class="text-gray-500 mt-1 mb-4">You need to create a property first before adding rooms.</p>
+      <UButton to="/properties" icon="i-heroicons-building-office-2">Go to Properties</UButton>
+    </div>
+
     <!-- Room Grid -->
-    <div v-if="enrichedRooms.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+    <div v-else-if="enrichedRooms.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
         <div 
             v-for="room in enrichedRooms" 
             :key="room.id" 
@@ -129,11 +171,13 @@ const formatCurrency = (val: number) => {
                 </div>
             </div>
 
-            <!-- Footer Action -->
-            <div class="p-2 bg-gray-50 dark:bg-gray-800/50 grid">
-                 <UButton :to="`/rooms/${room.id}`" block color="neutral" variant="outline" icon="i-heroicons-adjustments-horizontal">
-                    Manage Room
+            <!-- Footer Actions -->
+            <div class="p-2 bg-gray-50 dark:bg-gray-800/50 flex gap-2">
+                <UButton :to="`/rooms/${room.id}`" class="flex-1" color="neutral" variant="outline" icon="i-heroicons-adjustments-horizontal">
+                    Manage
                 </UButton>
+                <UButton icon="i-heroicons-pencil-square" color="neutral" variant="ghost" @click.stop="openEditRoomModal(room)" />
+                <UButton icon="i-heroicons-trash" color="error" variant="ghost" @click.stop="deleteRoom(room)" />
             </div>
         </div>
     </div>
@@ -142,7 +186,13 @@ const formatCurrency = (val: number) => {
     <div v-else class="text-center py-20 bg-gray-50 dark:bg-gray-800/50 rounded-2xl border border-dashed border-gray-300 dark:border-gray-700">
         <UIcon name="i-heroicons-home" class="w-16 h-16 text-gray-300 mb-4" />
         <h3 class="text-lg font-medium text-gray-900 dark:text-white">No rooms found</h3>
-        <p class="text-gray-500 mt-2">Try selecting a different property filter.</p>
+        <p class="text-gray-500 mt-2 mb-4">
+          {{ selectedPropertyId === '__all__' ? 'Start by adding your first room.' : 'No rooms for this property filter.' }}
+        </p>
+        <UButton icon="i-heroicons-plus" @click="openAddRoomModal">Add Room</UButton>
     </div>
+
+    <!-- Room Modal -->
+    <RoomModal v-model="isRoomModalOpen" :property-id="modalPropertyId" :room="selectedRoom" />
   </div>
 </template>

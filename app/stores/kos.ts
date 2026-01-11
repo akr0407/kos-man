@@ -24,6 +24,16 @@ export interface Room {
     status: 'available' | 'occupied' | 'maintenance'
     tenantName?: string
     useTrashService?: boolean // Enable/disable trash fee for this room
+    moveInDate?: string // YYYY-MM-DD - when tenant moved in (for proration)
+}
+
+export interface MeterReading {
+    id: string
+    roomId: string
+    period: string // YYYY-MM
+    meterStart: number
+    meterEnd: number
+    recordedAt: string
 }
 
 export interface GlobalSettings {
@@ -83,7 +93,28 @@ export const useKosStore = defineStore('kos', () => {
         { id: '201', propertyId: '2', name: 'Room A1', price: 1200000, status: 'occupied', tenantName: 'Siti Aminah' },
     ])
 
-    const bills = useLocalStorage<Bill[]>('kos-man-bills', [])
+    const bills = useLocalStorage<Bill[]>('kos-man-bills', [
+        {
+            id: 'b1', roomId: '101', period: '2025-12', meterStart: 1200, meterEnd: 1350, costPerKwh: 1500,
+            usageCost: 225000, additionalCost: 75000, totalAmount: 1800000, isPaid: true, generatedAt: '2025-12-25T10:00:00Z'
+        },
+        {
+            id: 'b2', roomId: '201', period: '2025-12', meterStart: 800, meterEnd: 920, costPerKwh: 2000,
+            usageCost: 240000, additionalCost: 90000, totalAmount: 1530000, isPaid: true, generatedAt: '2025-12-26T09:00:00Z'
+        },
+        {
+            id: 'b3', roomId: '101', period: '2026-01', meterStart: 1350, meterEnd: 1480, costPerKwh: 1500,
+            usageCost: 195000, additionalCost: 75000, totalAmount: 1770000, isPaid: false, generatedAt: '2026-01-25T10:00:00Z'
+        }
+    ])
+
+    const meterReadings = useLocalStorage<MeterReading[]>('kos-man-meter-readings', [
+        { id: 'mr1', roomId: '101', period: '2025-12', meterStart: 1200, meterEnd: 1350, recordedAt: '2025-12-25T10:00:00Z' },
+        { id: 'mr2', roomId: '201', period: '2025-12', meterStart: 800, meterEnd: 920, recordedAt: '2025-12-26T09:00:00Z' },
+        { id: 'mr3', roomId: '101', period: '2026-01', meterStart: 1350, meterEnd: 1480, recordedAt: '2026-01-25T10:00:00Z' },
+        // A partial reading for next month
+        { id: 'mr4', roomId: '101', period: '2026-02', meterStart: 1480, meterEnd: 1500, recordedAt: '2026-02-05T08:00:00Z' }
+    ])
 
     const tenants = useLocalStorage<Tenant[]>('kos-man-tenants', [
         { id: '1', name: 'Budi Santoso', contact: '08123456789', idCardNumber: '3201234567890001', status: 'active', roomId: '101' },
@@ -203,10 +234,29 @@ export const useKosStore = defineStore('kos', () => {
         tenants.value = tenants.value.filter(t => t.id !== id)
     }
 
+    // Meter Readings
+    function addMeterReading(reading: Omit<MeterReading, 'id' | 'recordedAt'>) {
+        const id = Date.now().toString()
+        meterReadings.value.unshift({
+            ...reading,
+            id,
+            recordedAt: new Date().toISOString()
+        })
+    }
+
+    function deleteMeterReading(id: string) {
+        meterReadings.value = meterReadings.value.filter(r => r.id !== id)
+    }
+
     // --- Getters ---
     const getPropertyById = computed(() => (id: string) => properties.value.find(p => p.id === id))
     const getRoomsByPropertyId = computed(() => (propertyId: string) => rooms.value.filter(r => r.propertyId === propertyId))
     const getBillsByRoomId = computed(() => (roomId: string) => bills.value.filter(b => b.roomId === roomId))
+    const getMeterReadingsByRoomId = computed(() => (roomId: string) =>
+        meterReadings.value.filter(r => r.roomId === roomId).sort((a, b) =>
+            new Date(b.period).getTime() - new Date(a.period).getTime()
+        )
+    )
 
 
     return {
@@ -214,6 +264,7 @@ export const useKosStore = defineStore('kos', () => {
         properties,
         rooms,
         bills,
+        meterReadings,
         tenants,
         settings,
         // Actions
@@ -227,13 +278,16 @@ export const useKosStore = defineStore('kos', () => {
         generateBill,
         markBillAsPaid,
         deleteBill,
+        addMeterReading,
+        deleteMeterReading,
         addTenant,
         updateTenant,
         deleteTenant,
         // Getters
         getPropertyById,
         getRoomsByPropertyId,
-        getBillsByRoomId
+        getBillsByRoomId,
+        getMeterReadingsByRoomId
     }
 }, {
     // persist: true - Handled manually

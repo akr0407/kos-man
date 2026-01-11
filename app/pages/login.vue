@@ -7,12 +7,15 @@ const router = useRouter();
 const isLoading = ref(false);
 
 const form = reactive({
-  username: "",
+  username: "admin@example.com",
   password: "",
 });
 
 const handleLogin = async () => {
-  // if (!form.username || !form.password) return; // Allow empty for mock testing or show error
+  if (form.username !== 'admin@example.com') {
+    alert('Invalid username. Please use admin@example.com');
+    return;
+  }
 
   isLoading.value = true;
   // Simulating process but allowing it to proceed
@@ -22,7 +25,7 @@ const handleLogin = async () => {
   if (process.client) {
     localStorage.setItem('kos-man-auth', 'true')
   }
-  await router.push("/properties");
+  await router.push("/");
 };
 </script>
 
@@ -75,7 +78,7 @@ const handleLogin = async () => {
             <UInput 
               v-model="form.username" 
               icon="i-heroicons-user" 
-              placeholder="admin" 
+              placeholder="admin@example.com" 
               size="lg"
               class="w-full"
               autofocus

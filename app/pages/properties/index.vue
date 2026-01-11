@@ -11,17 +11,6 @@ const openAddModal = () => {
   selectedProperty.value = undefined
   isModalOpen.value = true
 }
-
-const openEditModal = (property: any) => {
-  selectedProperty.value = property
-  isModalOpen.value = true
-}
-
-const handleDelete = (id: string) => {
-  if (confirm('Are you sure you want to delete this property?')) {
-    store.deleteProperty(id)
-  }
-}
 </script>
 
 <template>
@@ -51,25 +40,7 @@ const handleDelete = (id: string) => {
             />
             <div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-60"></div>
             
-            <!-- Floating Actions -->
-            <div class="absolute top-3 right-3 flex gap-2">
-                <UButton 
-                    color="neutral" 
-                    variant="solid" 
-                    icon="i-heroicons-pencil-square" 
-                    size="sm" 
-                    class="shadow-sm opacity-100 translate-y-0 lg:opacity-0 lg:group-hover:opacity-100 lg:translate-y-2 lg:group-hover:translate-y-0 transition-all duration-300"
-                    @click.stop="openEditModal(property)" 
-                />
-                <UButton 
-                    color="error" 
-                    variant="solid" 
-                    icon="i-heroicons-trash" 
-                    size="sm" 
-                    class="shadow-sm opacity-100 translate-y-0 lg:opacity-0 lg:group-hover:opacity-100 lg:translate-y-2 lg:group-hover:translate-y-0 transition-all duration-300 lg:delay-75"
-                    @click.stop="handleDelete(property.id)" 
-                />
-            </div>
+
 
             <!-- Property Name Overlay -->
             <div class="absolute bottom-4 left-4 right-4">

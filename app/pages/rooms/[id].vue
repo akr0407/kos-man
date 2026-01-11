@@ -1,19 +1,19 @@
 <script setup lang="ts">
-import { z } from 'zod'
-import { useKosStore, type Bill } from '~/stores/kos'
+import { useKosStore, type MeterReading } from '~/stores/kos'
 
 const route = useRoute()
 const router = useRouter()
 const store = useKosStore()
+const toast = useToast()
 
-// Make roomId reactive to route changes
 const roomId = computed(() => route.params.id as string)
 const { rooms, bills, tenants, properties, settings } = storeToRefs(store)
 const room = computed(() => rooms.value.find(r => r.id === roomId.value))
 
 const roomBills = computed(() => store.getBillsByRoomId(roomId.value).sort((a, b) => new Date(b.period).getTime() - new Date(a.period).getTime()))
+const meterReadings = computed(() => store.getMeterReadingsByRoomId(roomId.value))
 
-// Redirect if room not found (use watch to handle reactively)
+// Redirect if room not found
 watch(room, (newRoom) => {
   if (!newRoom && roomId.value) {
     router.push('/properties')
@@ -29,6 +29,7 @@ const statusOptions = [
 
 const roomStatus = ref(room.value?.status || 'available')
 const useTrashService = ref(room.value?.useTrashService ?? true)
+const moveInDate = ref(room.value?.moveInDate || '')
 const selectedTenantId = ref<string | null>(null)
 const isCreatingNewTenant = ref(false)
 const newTenantName = ref('')
@@ -49,7 +50,7 @@ watch(room, (r) => {
   if (r) {
     roomStatus.value = r.status
     useTrashService.value = r.useTrashService ?? true
-    // Find tenant by name
+    moveInDate.value = r.moveInDate || ''
     const tenant = tenants.value.find(t => t.name === r.tenantName)
     selectedTenantId.value = tenant?.id || null
   }
@@ -71,7 +72,6 @@ const updateRoomStatus = () => {
   
   if (roomStatus.value === 'occupied') {
     if (isCreatingNewTenant.value && newTenantName.value) {
-      // Create new tenant first
       store.addTenant({
         name: newTenantName.value,
         contact: newTenantContact.value || '0000000000',
@@ -80,19 +80,15 @@ const updateRoomStatus = () => {
         roomId: roomId.value
       })
       tenantName = newTenantName.value
-      
-      // Reset new tenant form
       newTenantName.value = ''
       newTenantContact.value = ''
       newTenantIdCard.value = ''
       isCreatingNewTenant.value = false
       selectedTenantId.value = null
-      
-      useToast().add({ title: 'Tenant Created', description: 'New tenant has been created and assigned.', color: 'success' })
+      toast.add({ title: 'Tenant Created', description: 'New tenant has been created and assigned.', color: 'success' })
     } else if (selectedTenantId.value && selectedTenantId.value !== '__new__') {
       const tenant = tenants.value.find(t => t.id === selectedTenantId.value)
       tenantName = tenant?.name || ''
-      
       if (tenant) {
         store.updateTenant(tenant.id, { roomId: roomId.value })
       }
@@ -102,76 +98,63 @@ const updateRoomStatus = () => {
   store.updateRoom(roomId.value, {
     status: roomStatus.value as 'available' | 'occupied' | 'maintenance',
     tenantName: roomStatus.value === 'occupied' ? tenantName : undefined,
-    useTrashService: useTrashService.value
+    useTrashService: useTrashService.value,
+    moveInDate: roomStatus.value === 'occupied' ? moveInDate.value : undefined
   })
   
-  useToast().add({ title: 'Room Updated', description: 'Room status has been updated.', color: 'success' })
+  toast.add({ title: 'Room Updated', description: 'Room settings have been saved.', color: 'success' })
 }
 
-// ============ Billing Form ============
-const formState = reactive({
-  period: new Date().toISOString().slice(0, 7), // YYYY-MM
-  meterStart: 0,
-  meterEnd: 0
-})
+// ============ Meter Reading Form ============
+const meterStart = ref(0)
+const meterEnd = ref(0)
+const newPeriod = ref(new Date().toISOString().slice(0, 7)) // YYYY-MM
 
-// Auto-fill previous meter functionality
-watch(roomBills, (newBills) => {
-    if (newBills.length > 0) {
-        formState.meterStart = newBills[0].meterEnd
-        formState.meterEnd = newBills[0].meterEnd
-    } else {
-        formState.meterStart = 0
-    }
+// Auto-fill from previous reading
+watch(meterReadings, (readings) => {
+  if (readings.length > 0) {
+    meterStart.value = readings[0].meterEnd
+    meterEnd.value = readings[0].meterEnd
+  }
 }, { immediate: true })
 
-// Calculation using property settings
-const property = computed(() => properties.value.find(p => p.id === room.value?.propertyId))
-const effectiveSettings = computed(() => {
-    return property.value?.settings || settings.value
-})
+const usage = computed(() => Math.max(0, meterEnd.value - meterStart.value))
 
-const usage = computed(() => {
-    const val = formState.meterEnd - formState.meterStart
-    return val > 0 ? val : 0
-})
-const electricityCost = computed(() => usage.value * effectiveSettings.value.costPerKwh)
-const waterCost = computed(() => effectiveSettings.value.waterFee)
-const trashCost = computed(() => useTrashService.value ? effectiveSettings.value.trashFee : 0)
-const additionalCost = computed(() => waterCost.value + trashCost.value)
-const totalBillPrediction = computed(() => (room.value?.price || 0) + electricityCost.value + additionalCost.value)
-
-// Submit Bill
-const generateBill = () => {
-    try {
-        store.generateBill({
-            roomId: roomId.value,
-            period: formState.period,
-            meterStart: formState.meterStart,
-            meterEnd: formState.meterEnd,
-            costPerKwh: effectiveSettings.value.costPerKwh,
-            additionalCost: additionalCost.value
-        })
-        useToast().add({ title: 'Bill Generated', description: 'The bill has been saved successfully.', color: 'success' })
-        
-        // Reset form slightly for next month
-        formState.meterStart = formState.meterEnd
-    } catch (e: any) {
-        useToast().add({ title: 'Error', description: e.message, color: 'error' })
-    }
+const addReading = () => {
+  if (meterEnd.value < meterStart.value) {
+    toast.add({ title: 'Invalid Reading', description: 'End reading cannot be less than start reading.', color: 'error' })
+    return
+  }
+  store.addMeterReading({
+    roomId: roomId.value,
+    period: newPeriod.value,
+    meterStart: meterStart.value,
+    meterEnd: meterEnd.value
+  })
+  toast.add({ title: 'Reading Saved', description: `Meter reading for ${newPeriod.value} recorded.`, color: 'success' })
+  meterStart.value = meterEnd.value // Next period starts where this one ended
 }
 
+const deleteReading = (id: string) => {
+  if (confirm('Delete this reading?')) {
+    store.deleteMeterReading(id)
+  }
+}
+
+// Bill actions
 const deleteBill = (id: string) => {
-    if (confirm('Delete this bill?')) {
-        store.deleteBill(id)
-    }
+  if (confirm('Delete this bill?')) {
+    store.deleteBill(id)
+  }
 }
 
 const markPaid = (id: string) => {
-    store.markBillAsPaid(id)
+  store.markBillAsPaid(id)
 }
 
 // Helpers
+const property = computed(() => properties.value.find(p => p.id === room.value?.propertyId))
+const effectiveSettings = computed(() => property.value?.settings || settings.value)
 const formatCurrency = (val: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(val)
 
 const getStatusColor = (status: string) => {
@@ -201,7 +184,7 @@ const goBack = () => {
                 Back
             </UButton>
             <h1 class="text-3xl font-bold text-gray-900 dark:text-white">{{ room.name }}</h1>
-            <p class="text-gray-500 dark:text-gray-400 text-sm mt-1">Manage room details, tenant, and billing.</p>
+            <p class="text-gray-500 dark:text-gray-400 text-sm mt-1">Manage room details and meter readings.</p>
         </div>
         <div class="flex items-center gap-3">
              <div class="text-right hidden sm:block">
@@ -215,77 +198,59 @@ const goBack = () => {
     </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        <!-- LEFT COLUMN: Billing (8 cols) -->
+        <!-- LEFT COLUMN: kWh Recording & History (8 cols) -->
         <div class="lg:col-span-8 space-y-6">
             
-            <!-- Billing Tabs -->
-            <UTabs :items="[{ label: 'Create Bill', slot: 'create' }, { label: 'History', slot: 'history' }]" class="w-full">
+            <!-- Meter Reading Tabs -->
+            <UTabs :items="[{ label: 'Record kWh', slot: 'record' }, { label: 'Billing History', slot: 'history' }]" class="w-full">
                 
-                <!-- Create Bill Tab -->
-                <template #create>
+                <!-- Record kWh Tab -->
+                <template #record>
                     <UCard class="mt-4">
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-                            <form @submit.prevent="generateBill" class="space-y-5">
+                            <form @submit.prevent="addReading" class="space-y-5">
                                 <div class="space-y-1">
                                     <label class="text-sm font-medium">Billing Period</label>
-                                    <UInput v-model="formState.period" type="month" icon="i-heroicons-calendar" />
+                                    <UInput v-model="newPeriod" type="month" icon="i-heroicons-calendar" class="w-full" />
                                 </div>
 
                                 <div class="grid grid-cols-2 gap-4">
                                     <div class="space-y-1">
                                         <label class="text-sm font-medium">Start (kWh)</label>
-                                        <UInput v-model="formState.meterStart" type="number" />
+                                        <UInput v-model="meterStart" type="number" class="w-full" />
                                     </div>
                                     <div class="space-y-1">
                                         <label class="text-sm font-medium">End (kWh)</label>
-                                        <UInput v-model="formState.meterEnd" type="number" />
+                                        <UInput v-model="meterEnd" type="number" class="w-full" />
                                     </div>
                                 </div>
 
-                                <!-- Global Rates (read-only info) -->
-                                <div class="bg-primary-50 dark:bg-primary-950/30 p-3 rounded-lg text-sm space-y-1">
+                                <div class="bg-primary-50 dark:bg-primary-950/30 p-3 rounded-lg text-sm">
                                     <div class="flex justify-between text-primary-700 dark:text-primary-400">
-                                        <span>Electricity Rate:</span>
-                                        <span class="font-medium">Rp {{ effectiveSettings.costPerKwh.toLocaleString() }} / kWh</span>
-                                    </div>
-                                    <div class="text-xs text-gray-500">
-                                        {{ property?.settings ? 'Using Property Settings' : 'Using Global Settings' }}
+                                        <span>Usage:</span>
+                                        <span class="font-bold">{{ usage }} kWh</span>
                                     </div>
                                 </div>
                                 
-                                <UButton type="submit" block color="neutral" size="lg" class="mt-6" :disabled="usage < 0">
-                                    Generate Bill
+                                <UButton type="submit" block color="primary" size="lg" class="mt-6" icon="i-heroicons-plus">
+                                    Save Reading
                                 </UButton>
                             </form>
 
-                            <!-- Live Preview -->
-                            <div class="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-6 flex flex-col justify-center">
-                                <h4 class="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4">Bill Preview</h4>
-                                <div class="space-y-3">
-                                    <div class="flex justify-between items-center text-sm">
-                                        <span class="text-gray-600 dark:text-gray-400">Base Rent</span>
-                                        <span class="font-medium">{{ formatCurrency(room.price) }}</span>
+                            <!-- Reading History -->
+                            <div class="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-6">
+                                <h4 class="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4">Reading History</h4>
+                                <div v-if="meterReadings.length > 0" class="space-y-2 max-h-64 overflow-y-auto">
+                                    <div v-for="reading in meterReadings" :key="reading.id" class="flex items-center justify-between p-3 bg-white dark:bg-gray-900 rounded-lg border border-gray-100 dark:border-gray-800">
+                                        <div>
+                                            <div class="font-medium">{{ reading.meterEnd - reading.meterStart }} kWh</div>
+                                            <div class="text-xs text-gray-500">{{ reading.period }} • {{ reading.meterStart }} → {{ reading.meterEnd }}</div>
+                                        </div>
+                                        <UButton size="xs" color="error" variant="ghost" icon="i-heroicons-trash" @click="deleteReading(reading.id)" />
                                     </div>
-                                    <div class="flex justify-between items-center text-sm">
-                                        <span class="text-gray-600 dark:text-gray-400">Electricity ({{ usage }} kWh)</span>
-                                        <span class="font-medium">{{ formatCurrency(electricityCost) }}</span>
-                                    </div>
-                                    <div class="flex justify-between items-center text-sm">
-                                        <span class="text-gray-600 dark:text-gray-400">Water</span>
-                                        <span class="font-medium">{{ formatCurrency(waterCost) }}</span>
-                                    </div>
-                                    <div class="flex justify-between items-center text-sm">
-                                        <span class="text-gray-600 dark:text-gray-400">
-                                            Trash 
-                                            <span v-if="!useTrashService" class="text-xs text-orange-500">(disabled)</span>
-                                        </span>
-                                        <span class="font-medium">{{ formatCurrency(trashCost) }}</span>
-                                    </div>
-                                    <div class="border-t border-gray-200 dark:border-gray-700 my-2"></div>
-                                    <div class="flex justify-between items-center text-lg font-bold text-gray-900 dark:text-white">
-                                        <span>Total</span>
-                                        <span>{{ formatCurrency(totalBillPrediction) }}</span>
-                                    </div>
+                                </div>
+                                <div v-else class="text-center text-gray-500 text-sm py-8">
+                                    No readings recorded yet.
                                 </div>
                             </div>
                         </div>
@@ -295,6 +260,12 @@ const goBack = () => {
                 <!-- History Tab -->
                 <template #history>
                      <UCard class="mt-4">
+                        <div class="flex items-center justify-between mb-4">
+                            <h4 class="font-semibold text-gray-900 dark:text-white">Billing History</h4>
+                            <UButton to="/billing" size="sm" color="primary" variant="soft" icon="i-heroicons-arrow-top-right-on-square">
+                                Go to Billing
+                            </UButton>
+                        </div>
                         <div v-if="roomBills.length > 0">
                             <table class="w-full text-sm text-left">
                                 <thead class="bg-gray-50 dark:bg-gray-800 text-gray-500 border-b border-gray-200 dark:border-gray-700">
@@ -336,6 +307,9 @@ const goBack = () => {
                                 <UIcon name="i-heroicons-document-text" class="w-6 h-6 text-gray-400" />
                             </div>
                             <p class="text-gray-500 text-sm">No billing history recorded yet.</p>
+                            <UButton to="/billing" class="mt-4" size="sm" color="primary" variant="soft">
+                                Create Bill in Billing Page
+                            </UButton>
                         </div>
                     </UCard>
                 </template>
@@ -409,6 +383,13 @@ const goBack = () => {
                                 <UInput v-model="newTenantIdCard" placeholder="16 digits" maxlength="16" size="sm" class="w-full" />
                             </UFormField>
                         </div>
+
+                        <!-- Move-In Date -->
+                        <div class="space-y-1">
+                            <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Move-In Date</label>
+                            <UInput v-model="moveInDate" type="date" icon="i-heroicons-calendar" class="w-full" />
+                            <p class="text-xs text-gray-500">Used for prorated billing calculation.</p>
+                        </div>
                     </div>
 
                     <!-- Trash Service Toggle -->
@@ -427,8 +408,6 @@ const goBack = () => {
                     </UButton>
                 </div>
             </UCard>
-            
-            <!-- Quick Stats / Info could go here -->
         </div>
     </div>
   </div>
