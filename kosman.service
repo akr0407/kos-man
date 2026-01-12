@@ -1,0 +1,31 @@
+[Unit]
+Description=KosMan Nuxt Application
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/kosman
+ExecStart=/usr/bin/node .output/server/index.mjs
+Restart=on-failure
+RestartSec=10
+
+# Environment variables
+Environment=NODE_ENV=production
+Environment=NUXT_HOST=0.0.0.0
+Environment=NUXT_PORT=3004
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=kosman
+
+# Security
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/www/kosman/data
+
+[Install]
+WantedBy=multi-user.target
